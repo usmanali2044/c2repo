@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg: #0a0c10;
+    --color-surface: #0f1117;
+    --color-surface2: #161b22;
+    --color-border: #21262d;
+    --color-accent: #00ff88;
+    --color-accent2: #00d4ff;
+    --color-danger: #ff4757;
+    --color-warning: #ffa502;
+    --color-text: #e6edf3;
+    --color-muted: #8b949e;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    overflow: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-surface);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #484f58;
+  }
+}
+
+/* Terminal glow effects */
+.terminal-glow {
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.1), inset 0 0 20px rgba(0, 0, 0, 0.3);
+}
+
+.accent-glow {
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.8), 0 0 20px rgba(0, 255, 136, 0.4);
+}
+
+.danger-glow {
+  text-shadow: 0 0 10px rgba(255, 71, 87, 0.8);
+}
+
+/* Scanline overlay */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Typing cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Pulse dot animation */
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(0, 255, 136, 0); }
+}
+
+.pulse-online {
+  animation: pulse-dot 2s infinite;
+}
+
+/* Slide in from left */
+@keyframes slideIn {
+  from { transform: translateX(-10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.slide-in {
+  animation: slideIn 0.2s ease-out;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Grid pattern background */
+.grid-bg {
+  background-image: 
+    linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Command row hover */
+.cmd-row {
+  transition: background 0.15s ease;
+}
+.cmd-row:hover {
+  background: rgba(0, 255, 136, 0.04);
+}
+
+/* Matrix rain effect for loading */
+@keyframes matrix-fall {
+  0% { transform: translateY(-100%); opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+/* Input focus ring */
+.terminal-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.5), 0 0 15px rgba(0, 255, 136, 0.1);
+}
+
+/* Victim card hover */
+.victim-card {
+  transition: all 0.2s ease;
+  border-left: 2px solid transparent;
+}
+.victim-card:hover {
+  background: rgba(0, 255, 136, 0.05);
+  border-left-color: rgba(0, 255, 136, 0.4);
+}
+.victim-card.active {
+  background: rgba(0, 255, 136, 0.08);
+  border-left-color: #00ff88;
+}
+
+/* File card */
+.file-card {
+  transition: all 0.2s ease;
+}
+.file-card:hover {
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+/* Badge */
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* Tooltip */
+.tooltip-wrapper {
+  position: relative;
+}
+.tooltip-wrapper:hover .tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #21262d;
+  color: #e6edf3;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: all 0.15s ease;
+  pointer-events: none;
+  z-index: 50;
+  border: 1px solid #30363d;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Spin animation */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin-slow 1s linear infinite;
+}
+
+/* Command output text */
+.output-text {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  line-height: 1.6;
+}

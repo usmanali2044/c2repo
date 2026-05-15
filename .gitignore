@@ -1,0 +1,29 @@
+private/*
+.idea/*
+.vscode/*
+.DS_Store
+bin/*
+
+# Node dependencies
+node_modules/
+frontend/node_modules/
+server/node_modules/
+
+# Frontend build output
+frontend/dist/
+frontend/.vite/
+
+# Environment files
+.env
+.env.local
+frontend/.env
+server/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+Thumbs.dbcmd/options.yml
+cmd/options.yml
+*.exe
