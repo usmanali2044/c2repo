@@ -84,7 +84,7 @@ export default function Sidebar() {
             const isActive = activeVictim?.id === v.id;
             const sleepEntry = sleepStatus?.[v.id];
             const now = new Date();
-            const isSleeping = sleepEntry && new Date(sleepEntry.wakeAt) > now;
+            const isSleeping = sleepEntry?.state === 'sleeping' && new Date(sleepEntry.wakeAt) > now;
             const status = sleepEntry?.state || (victimStatus?.[v.id] === 'online' ? 'online' : 'offline');
 
             let statusColor = 'bg-[#30363d]';
